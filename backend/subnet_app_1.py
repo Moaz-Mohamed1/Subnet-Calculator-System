@@ -12,6 +12,8 @@ Run:
 """
 
 import json
+import ipaddress
+import re
 import socket
 import threading
 import time
@@ -92,45 +94,36 @@ def query_arduino_serial(port, query):
 
 
 def compute_locally(ip_str, mask_str):
-    """Fallback: compute subnet math in Python (no Arduino needed)."""
+    """Validate IPv4 input and calculate without enumerating host addresses."""
     try:
-        def parse_ip(s):
-            s = s.strip()
-            if '.' not in s:   # CIDR prefix
-                prefix = int(s)
-                mask = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
-                return mask
-            parts = s.split('.')
-            if len(parts) != 4:
-                raise ValueError("Bad IP")
-            result = 0
-            for p in parts:
-                result = (result << 8) | int(p)
-            return result
-
-        def ip_to_str(n):
-            return f"{(n>>24)&0xFF}.{(n>>16)&0xFF}.{(n>>8)&0xFF}.{n&0xFF}"
-
-        ip   = parse_ip(ip_str)
-        mask = parse_ip(mask_str)
-        network   = ip & mask
-        broadcast = network | (~mask & 0xFFFFFFFF)
-        first     = network + 1
-        last      = broadcast - 1
-        hosts     = (~mask & 0xFFFFFFFF) - 1
-
+        if not isinstance(ip_str, str) or not isinstance(mask_str, str):
+            raise ValueError("IP and mask must be text")
+        ip = ipaddress.IPv4Address(ip_str.strip())
+        mask_text = mask_str.strip()
+        prefix_text = mask_text[1:] if mask_text.startswith('/') else mask_text
+        if re.fullmatch(r"[0-9]{1,2}", prefix_text):
+            prefix = int(prefix_text)
+            if prefix > 32:
+                raise ValueError("Prefix must be between 0 and 32")
+        else:
+            mask = int(ipaddress.IPv4Address(mask_text))
+            inverse = (~mask) & 0xFFFFFFFF
+            if inverse & (inverse + 1):
+                raise ValueError("Subnet mask must contain contiguous leading ones")
+            prefix = mask.bit_count()
+        network = ipaddress.IPv4Network((ip, prefix), strict=False)
+        small = prefix >= 31
+        first = network.network_address if small else network.network_address + 1
+        last = network.broadcast_address if small else network.broadcast_address - 1
         return {
-            "ip":         ip_to_str(ip),
-            "mask":       ip_to_str(mask),
-            "network":    ip_to_str(network),
-            "broadcast":  ip_to_str(broadcast),
-            "first_host": ip_to_str(first),
-            "last_host":  ip_to_str(last),
-            "num_hosts":  hosts,
-            "source":     "Python (local)"
+            "ip": str(ip), "mask": str(network.netmask),
+            "network": str(network.network_address), "broadcast": str(network.broadcast_address),
+            "first_host": str(first), "last_host": str(last),
+            "num_hosts": network.num_addresses if small else network.num_addresses - 2,
+            "source": "Python (local)"
         }
-    except Exception as e:
-        return {"error": str(e)}
+    except (ValueError, TypeError) as error:
+        return {"error": str(error)}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Flask routes
@@ -143,15 +136,27 @@ def index():
 
 @app.route("/api/calculate", methods=["POST"])
 def calculate():
-    data     = request.json or {}
-    ip_str   = data.get("ip", "").strip()
-    mask_str = data.get("mask", "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected a JSON object"}), 400
+    ip_str = data.get("ip", "")
+    mask_str = data.get("mask", "")
     mode     = data.get("mode", "local")   # "tcp" | "serial" | "local"
 
     if not ip_str or not mask_str:
         return jsonify({"error": "IP and mask required"}), 400
 
-    query = f"{ip_str}/{mask_str}"
+    validated = compute_locally(ip_str, mask_str)
+    if "error" in validated:
+        return jsonify(validated), 400
+    if mode not in ("local", "tcp", "serial"):
+        return jsonify({"error": "Unknown calculation mode"}), 400
+    if (mode == "tcp" and not arduino_ip) or (mode == "serial" and not serial_port):
+        return jsonify({"error": "Configure local hardware before using this mode"}), 400
+    # Preserve legacy firmware; its host arithmetic does not support /31 and /32.
+    if mode != "local" and validated["num_hosts"] <= 2 and validated["mask"] in ("255.255.255.254", "255.255.255.255"):
+        return jsonify({"error": "Use local mode for /31 and /32; legacy firmware does not support them"}), 400
+    query = f"{validated['ip']}/{validated['mask']}"
 
     if mode == "tcp" and arduino_ip:
         raw = query_arduino_tcp(arduino_ip, query)
@@ -655,4 +660,4 @@ if __name__ == "__main__":
     print("  Subnet Calculator – Python Backend")
     print("  Open  →  http://localhost:5000")
     print("=" * 55)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=5000, debug=False)

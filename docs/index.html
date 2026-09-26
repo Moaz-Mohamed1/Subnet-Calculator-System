@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Calculate IPv4 networks, masks, host ranges and address counts entirely in your browser. A static companion to the Flask and Arduino project.">
+  <title>Subnet Calculator — Browser Demo</title>
+  <link rel="stylesheet" href="styles.css"><script src="subnet.js" defer></script><script src="app.js" defer></script>
+</head>
+<body>
+<main>
+  <header><a class="brand" href="./">SUBNET / LAB</a><span class="badge">Browser demo</span></header>
+  <section class="intro"><p class="eyebrow">NETWORKING, MADE VISIBLE</p><h1>Know your<br><span>network.</span></h1><p>Turn an IPv4 address and subnet mask into a clear network breakdown. All calculations stay in this browser.</p></section>
+  <section class="calculator" aria-labelledby="calculator-title">
+    <div class="section-heading"><h2 id="calculator-title">IPv4 calculator</h2><span>01 / INPUT</span></div>
+    <form id="calculator" novalidate>
+      <div class="fields"><div><label for="ip">IPv4 address</label><input id="ip" name="ip" value="192.168.1.10" placeholder="192.168.1.10" aria-describedby="ip-hint" required><small id="ip-hint">Four octets, each from 0 to 255</small></div>
+      <div><label for="mask">Subnet mask or prefix</label><input id="mask" name="mask" value="24" placeholder="24, /24 or 255.255.255.0" aria-describedby="mask-hint" required><small id="mask-hint">Prefix 0–32 or a contiguous dotted mask</small></div></div>
+      <button type="submit">Calculate network <span aria-hidden="true">→</span></button>
+      <p id="error" role="alert" hidden></p>
+    </form>
+    <div class="examples" aria-label="Example networks"><span>TRY AN EXAMPLE</span><button type="button" data-ip="192.168.1.10" data-mask="24">Home /24</button><button type="button" data-ip="10.0.0.0" data-mask="31">Point-to-point /31</button><button type="button" data-ip="10.0.0.7" data-mask="32">Single host /32</button></div>
+  </section>
+  <section id="results" aria-labelledby="result-heading" aria-live="polite" hidden><div class="section-heading"><h2 id="result-heading">Network breakdown</h2><span>02 / RESULTS</span></div><dl id="values"></dl><p id="note" class="note"></p></section>
+  <aside><h2>Part of a bigger system.</h2><p>This is the standalone JavaScript demo. The repository also includes the original Python/Flask interface and Arduino firmware. TCP and USB Serial need local hardware and are unavailable here.</p><a href="https://github.com/Moaz-Mohamed1/Subnet-Calculator-System">Explore the project on GitHub <span aria-hidden="true">↗</span></a></aside>
+  <footer>Subnet Calculator System · Educational networking project · No account required</footer>
+</main>
+</body></html>
